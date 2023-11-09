@@ -1,0 +1,183 @@
+version: "3.8"
+
+services:
+  # control:
+    # container_name: "control_panel"
+    # depends_on:
+      # - accounts
+      # - locations
+      # - readings
+  # Accounts Service
+  accounts_db:
+    image: postgres:15.3-alpine3.18
+    container_name: "accounts_db"
+    ports:
+      - 5432:5432
+    restart: always
+    secrets:
+      - db-password
+    environment:
+      POSTGRES_DB: accounts_example_db
+      POSTGRES_USER: postgres
+      PGUSER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/db-password
+    volumes:
+      - accounts_pg:/var/lib/postgresql/data
+      - accounts_db:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: [ "CMD", "pg_isready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+  accounts:
+    container_name: "accounts_service"
+    depends_on: ["accounts_db", "adminer"]
+    build:
+      context: ./services/accounts/.
+      dockerfile: Dockerfile
+    ports:
+      - 3000:3000
+    networks:
+      - backend
+
+  # Locations Service
+  locations_db:
+    image: postgres:15.3-alpine3.18
+    container_name: "locations_db"
+    ports:
+      - 5433:5432
+    restart: always
+    secrets:
+      - db-password
+    environment:
+      POSTGRES_DB: locations_example_db
+      POSTGRES_USER: postgres
+      PGUSER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/db-password
+    volumes:
+      - locations_pg:/var/lib/postgresql/data
+      - locations_db:/docker-entrypoint-initdb.d
+
+    healthcheck:
+      test: [ "CMD", "pg_isready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+  locations:
+    container_name: "locations_service"
+    depends_on: ["locations_db"]
+    build:
+      context: ./services/locations/.
+      dockerfile: Dockerfile
+    ports:
+      - 3001:3000
+    networks:
+      - backend
+
+
+  # Readings Service
+  readings_db:
+    image: postgres:15.3-alpine3.18
+    container_name: "readings_db"
+    ports:
+      - 5434:5432
+    restart: always
+    secrets:
+      - db-password
+    environment:
+      POSTGRES_DB: readings_example_db
+      POSTGRES_USER: postgres
+      PGUSER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/db-password
+    volumes:
+      - readings_pg:/var/lib/postgresql/data
+      - readings_db:/docker-entrypoint-initdb.d
+
+    healthcheck:
+      test: [ "CMD", "pg_isready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
+  readings:
+    container_name: "readings_service"
+    depends_on: ["readings_db"]
+    build:
+      context: ./services/readings/.
+      dockerfile: Dockerfile
+    ports:
+      - 3002:3000
+    networks:
+      - backend
+
+  adminer:
+    image: adminer
+    container_name: "postgres_adminer"
+    depends_on: ["accounts_db", "locations_db", "readings_db"]
+    restart: always
+    ports:
+      - 8080:8080
+    networks:
+      - backend
+
+
+networks:
+  default:
+  backend:
+volumes:
+  accounts_pg:
+    driver: local
+    driver_opts:
+      type: "none"
+      o: "bind"
+      device: "./services/accounts/pg_data"
+  accounts_db:
+    driver: local
+    driver_opts:
+      type: "none"
+      o: "bind"
+      device: "./services/accounts/database"
+
+  locations_pg:
+    driver: local
+    driver_opts:
+      type: "none"
+      o: "bind"
+      device: "./services/locations/pg_data"
+  locations_db:
+    driver: local
+    driver_opts:
+      type: "none"
+      o: "bind"
+      device: "./services/locations/database"
+
+  readings_pg:
+    driver: local
+    driver_opts:
+      type: "none"
+      o: "bind"
+      device: "./services/readings/pg_data"
+  readings_db:
+    driver: local
+    driver_opts:
+      type: "none"
+      o: "bind"
+      device: "./services/readings/database"
+
+secrets:
+  db-password:
+    file: secrets/db-password.txt
+
+    # command: tail -f /dev/null
+    # working_dir: /usr/src/app
+    # command: ["go build -o main ./cmd/accounts/.", "main"]
+    # volumes:
+      # - .:/usr/src/app
