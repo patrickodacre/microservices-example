@@ -93,8 +93,9 @@ func main() {
 			topic := "iot_data"
 			sleep := time.Duration(DELAY_MS)
 			time.Sleep(sleep * time.Millisecond)
+			device_id := i
 
-			go feed.Run(ctx, topic, wg, stopchan)
+			go feed.Run(ctx, device_id, topic, wg, stopchan)
 			log.Println("Spawned IoT device")
 		}
 	}
@@ -117,7 +118,7 @@ func NewDataFeed() DataFeed {
 	return DataFeed{}
 }
 
-func (f *DataFeed) Run(ctx context.Context, topic string, wg *sync.WaitGroup, stopchan chan<- struct{}) {
+func (f *DataFeed) Run(ctx context.Context, device_id int, topic string, wg *sync.WaitGroup, stopchan chan<- struct{}) {
 	// use RETURN to finish this run() and then close this routine
 	// RETURN when I receive a cancel request
 	defer wg.Done()
@@ -192,7 +193,7 @@ func (f *DataFeed) Run(ctx context.Context, topic string, wg *sync.WaitGroup, st
 			// check if the goroutines were still running
 			dataCount += 1
 
-			value := fmt.Sprintf("Producer example, message #%d", messageCount)
+			value := fmt.Sprintf("Producer example for Device ID %d :: message #%d", device_id, messageCount)
 
 			err = p.Produce(&kafka.Message{
 				TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
