@@ -3,16 +3,27 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/confluentinc/confluent-kafka-go/kafka"
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
+
+	"github.com/confluentinc/confluent-kafka-go/kafka"
+)
+
+const (
+	POLL_FREQUENCY_MS = 10 // how often will we poll Kafka queue
+	BUFFER_SIZE       = 50
 )
 
 func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
+
+	back_buffer := make([]string, BUFFER_SIZE*2)
+	back_buffer_cursor := 0
+	db_buffer := make([]string, BUFFER_SIZE*2)
 
 	stopchan := make(chan struct{})
 	defer close(stopchan)
@@ -77,30 +88,72 @@ func main() {
 
 	log.Println("Subscribed to Topic :: ", topic)
 
+	wg := &sync.WaitGroup{}
+
 	// Consumer listening...
 	run := true
 	for run {
 
 		select {
 		case <-ctx.Done():
+			// shutting down, so we must clear out the
+			// current buffer to avoid data loss
+			wg.Add(1)
+			go func(buf []string, wg *sync.WaitGroup) {
+				log.Println("Clearing the back buffer")
+				defer wg.Done()
+				for i, message := range buf {
+					fmt.Printf("writing %d to db :: %+v\n", i, message)
+				}
+
+			}(back_buffer[:back_buffer_cursor], wg)
+
 			run = false
 
 		default:
-			ev := c.Poll(3000)
+			ev := c.Poll(POLL_FREQUENCY_MS)
+
 			log.Println("polling")
+
 			if ev == nil {
-				log.Printf("No events in queue.\n")
 				continue
 			}
 
 			switch e := ev.(type) {
 			case *kafka.Message:
-				// Process the message received.
-				log.Printf("%% Message on Topic :: %s:\n MESSAGE :: %s\n",
-					e.TopicPartition, string(e.Value))
-				if e.Headers != nil {
-					log.Printf("%% Headers: %v\n", e.Headers)
+
+				if back_buffer_cursor == BUFFER_SIZE {
+
+					log.Println("Clearing back buffer...")
+
+					for i := 0; i < back_buffer_cursor; i++ {
+						db_buffer[i] = back_buffer[i]
+					}
+
+					// make sure we wait for our buffer to be written
+					// to the db before we exit the program
+					wg.Add(1)
+					go func(buf []string, wg *sync.WaitGroup) {
+						defer wg.Done()
+						for i, message := range buf {
+							fmt.Printf("writing %d to db :: %+v\n", i, message)
+						}
+
+					}(db_buffer[:], wg)
+
+					log.Println("Back buffer cleared")
+					back_buffer_cursor = 0
 				}
+
+				back_buffer[back_buffer_cursor] = string(e.Value)
+				back_buffer_cursor += 1
+
+				// Process the message received.
+				// log.Printf("%% Message on Topic :: %s:\n MESSAGE :: %s\n",
+				// e.TopicPartition, string(e.Value))
+				// if e.Headers != nil {
+				// log.Printf("%% Headers: %v\n", e.Headers)
+				// }
 
 				// We can store the offsets of the messages manually or let
 				// the library do it automatically based on the setting
@@ -131,4 +184,7 @@ func main() {
 		}
 	}
 
+	log.Println("Shutting down consumer...")
+	wg.Wait()
+	log.Println("Done")
 }
