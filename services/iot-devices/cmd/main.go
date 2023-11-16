@@ -21,6 +21,10 @@ import (
 var dataCount = 0
 var numOfDevices = 3
 
+const (
+	DELAY_MS = 100
+)
+
 func main() {
 
 	router := mux.NewRouter()
@@ -87,7 +91,7 @@ func main() {
 			wg.Add(1)
 			feed := NewDataFeed()
 			topic := "iot_data"
-			sleep := time.Duration(15000 / numOfDevices)
+			sleep := time.Duration(DELAY_MS)
 			time.Sleep(sleep * time.Millisecond)
 
 			go feed.Run(ctx, topic, wg, stopchan)
@@ -209,7 +213,7 @@ func (f *DataFeed) Run(ctx context.Context, topic string, wg *sync.WaitGroup, st
 			log.Printf("Message Sent: %+v\n", value)
 			messageCount += 1
 			// KPI samples are taken every 15 seconds
-			time.Sleep(15000 * time.Millisecond)
+			time.Sleep(DELAY_MS * time.Millisecond)
 
 		}
 	}
