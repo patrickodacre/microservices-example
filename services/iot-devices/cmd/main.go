@@ -6,16 +6,19 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"github.com/confluentinc/confluent-kafka-go/kafka"
-	"github.com/gorilla/mux"
 	"log"
+	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/confluentinc/confluent-kafka-go/kafka"
+	"github.com/gorilla/mux"
 )
 
 var dataCount = 0
@@ -24,6 +27,17 @@ var numOfDevices = 3
 const (
 	DELAY_MS = 100
 )
+
+type Reading struct {
+	UserId                int64
+	AccountId             int64
+	LocationId            int64
+	Ph                    int32
+	TemperatureCelsius    int32
+	TemperatureFahrenheit int32
+	Shp                   int32
+	Iron                  int32
+}
 
 func main() {
 
@@ -39,7 +53,7 @@ func main() {
 		Addr:    ":3000",
 		Handler: router,
 	}
-	serverChan := make(chan struct{})
+	serverShutdownChan := make(chan struct{})
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil {
@@ -48,7 +62,7 @@ func main() {
 			}
 
 			log.Println("HTTP Server Shutdown")
-			serverChan <- struct{}{}
+			serverShutdownChan <- struct{}{}
 		}
 	}()
 	log.Println("Server is running")
@@ -93,7 +107,7 @@ func main() {
 			topic := "iot_data"
 			sleep := time.Duration(DELAY_MS)
 			time.Sleep(sleep * time.Millisecond)
-			device_id := i
+			var device_id int64 = int64(i + 1)
 
 			go feed.Run(ctx, device_id, topic, wg, stopchan)
 			log.Println("Spawned IoT device")
@@ -103,7 +117,7 @@ func main() {
 	log.Println("Program running...")
 
 	// blocks until the server is shut down
-	<-serverChan
+	<-serverShutdownChan
 
 	log.Println("Server is shut down.")
 	log.Println("IoT Devices are shutting down...")
@@ -118,7 +132,11 @@ func NewDataFeed() DataFeed {
 	return DataFeed{}
 }
 
-func (f *DataFeed) Run(ctx context.Context, device_id int, topic string, wg *sync.WaitGroup, stopchan chan<- struct{}) {
+func (f *DataFeed) Run(ctx context.Context, device_id int64, topic string, wg *sync.WaitGroup, stopchan chan<- struct{}) {
+
+	s1 := rand.NewSource(time.Now().UnixNano())
+	randomizer := rand.New(s1)
+
 	// use RETURN to finish this run() and then close this routine
 	// RETURN when I receive a cancel request
 	defer wg.Done()
@@ -193,7 +211,32 @@ func (f *DataFeed) Run(ctx context.Context, device_id int, topic string, wg *syn
 			// check if the goroutines were still running
 			dataCount += 1
 
-			value := fmt.Sprintf("Producer example for Device ID %d :: message #%d", device_id, messageCount)
+			ph := randomizer.Int31n(10)
+			temperature_celsius := randomizer.Int31n(22)
+			temperature_fahrenheit := randomizer.Int31n(90)
+			shp := randomizer.Int31n(100)
+			iron := randomizer.Int31n(100)
+
+			reading := Reading{
+				UserId:                device_id,
+				AccountId:             device_id,
+				LocationId:            device_id,
+				Ph:                    ph,
+				TemperatureCelsius:    temperature_celsius,
+				TemperatureFahrenheit: temperature_fahrenheit,
+				Shp:                   shp,
+				Iron:                  iron,
+			}
+
+			reading_json, err := json.Marshal(reading)
+
+			if err != nil {
+				log.Printf("Error JSONing the reading :: %+v\n", err)
+				stopchan <- struct{}{}
+				return
+			}
+
+			value := string(reading_json)
 
 			err = p.Produce(&kafka.Message{
 				TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
@@ -208,7 +251,10 @@ func (f *DataFeed) Run(ctx context.Context, device_id int, topic string, wg *syn
 					time.Sleep(time.Second)
 					continue
 				}
-				log.Printf("Message Failed: %v\n", err)
+
+				log.Printf("Produce Message Failed: %v\n", err)
+				stopchan <- struct{}{}
+				return
 			}
 
 			log.Printf("Message Sent: %+v\n", value)
