@@ -118,6 +118,17 @@ services:
     networks:
       - backend
 
+  iot_devices:
+    container_name: "iot_devices"
+    # depends_on: []
+    build:
+      context: ./services/iot-devices/.
+      dockerfile: Dockerfile
+    ports:
+      - 3003:3000
+    networks:
+      - backend
+
   adminer:
     image: adminer
     container_name: "postgres_adminer"
