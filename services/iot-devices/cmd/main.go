@@ -143,7 +143,7 @@ func (f *DataFeed) Run(ctx context.Context, device_id int64, topic string, wg *s
 
 	p, err := kafka.NewProducer(&kafka.ConfigMap{
 		"bootstrap.servers": ":9092",
-		"client.id":         "some_client_id",
+		"client.id":         fmt.Sprintf("some_client_id_%d", device_id),
 		"acks":              "all",
 	})
 
